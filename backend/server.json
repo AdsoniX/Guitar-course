@@ -1,0 +1,47 @@
+require("dotenv").config();
+const express = require("express");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const Stripe = require("stripe");
+const cors = require("cors");
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const users = [];
+
+app.post("/register", async (req,res)=>{
+  const hashed = await bcrypt.hash(req.body.password,10);
+  users.push({email:req.body.email,password:hashed,paid:false});
+  res.json({ok:true});
+});
+
+app.post("/login", async (req,res)=>{
+  const user = users.find(u=>u.email===req.body.email);
+  if(!user) return res.sendStatus(401);
+  const ok = await bcrypt.compare(req.body.password,user.password);
+  if(!ok) return res.sendStatus(401);
+  res.json({token:jwt.sign({email:user.email},process.env.JWT_SECRET),paid:user.paid});
+});
+
+app.post("/create-checkout-session", async (req,res)=>{
+  const session = await stripe.checkout.sessions.create({
+    mode:"payment",
+    payment_method_types:["card"],
+    line_items:[{
+      price_data:{
+        currency:"eur",
+        product_data:{name:"Guitar Course"},
+        unit_amount:1000
+      },
+      quantity:1
+    }],
+    success_url:process.env.SUCCESS_URL,
+    cancel_url:process.env.CANCEL_URL
+  });
+  res.json({id:session.id});
+});
+
+app.listen(3000);
